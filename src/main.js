@@ -208,7 +208,7 @@ const handleNewChatMember = async (bot, type) => {
 }
 
 function handleStart(bot) {
-  bot.onText(/\/start (.*)$/, (msg, match) => {
+  bot.onText(/\/start(.*)$/, (msg, match) => {
     let botInfo;
     bot.getMe().then(botInformation => {
       botInfo = botInformation;
@@ -216,6 +216,7 @@ function handleStart(bot) {
         const chatId = msg.chat.id;
         let jsonToSend;
         let imageToSend;
+
         if (botInfo.username === safeguardUsername) {
           jsonToSend = {
             caption: `<b>Verify you're human with Safeguard Portal</b>\n\nClick 'VERIFY' and complete captcha to gain entry`,
@@ -229,7 +230,7 @@ function handleStart(bot) {
               }]]
             }
           }
-          imageToSend = safeguardVerification
+          imageToSend = safeguardVerification;
         } else if (botInfo.username === delugeUsername) {
           jsonToSend = {
             caption: `The group is protected by @delugeguardbot.\n\nClick below to start human verification.`,
@@ -243,7 +244,7 @@ function handleStart(bot) {
               }]]
             }
           }
-          imageToSend = delugeVerification
+          imageToSend = delugeVerification;
         } else if (botInfo.username === guardianUsername) {
           jsonToSend = {
             caption: `🧑 <b>Human Authentication</b>\n\nPlease click the button below to verify that you are human.`,
@@ -257,7 +258,7 @@ function handleStart(bot) {
               }]]
             }
           }
-          imageToSend = guardianVerification
+          imageToSend = guardianVerification;
         }
         
         bot.sendPhoto(
@@ -267,9 +268,7 @@ function handleStart(bot) {
         );
       }
     });
-  
   });
-
 }
 
 handleNewChatMember(safeguardBot, "safeguard");
